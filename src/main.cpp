@@ -48,7 +48,7 @@ int main() {
     Eigen::Vector4d state;
     state << 0.0,   // cart position [m]
              0.0,   // cart velocity [m/s]
-             0.15,  // pole angle [rad]
+             0.5,  // pole angle [rad]
              0.0;   // pole angular velocity [rad/s]
 
     std::ofstream log("../data/simulation.csv");
