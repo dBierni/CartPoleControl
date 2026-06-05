@@ -1,6 +1,6 @@
 #include <iostream>
 #include <fstream>
-
+#include <algorithm>
 #include "CartPole.hpp"
 #include "LQR.hpp"
 
@@ -64,6 +64,9 @@ int main() {
         double time = i * dt;
 
         double u = -(K * state)(0);
+        // actuator saturation
+        const double u_max = 10.0;
+        u = std::clamp(u, -u_max, u_max);
 
         state = rk4Step(cartpole, state, u, dt);
 
