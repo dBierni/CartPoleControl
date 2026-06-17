@@ -1,27 +1,33 @@
 # CartPoleControl
 
-### Discrete-Time LQR Control of an Underactuated Cart-Pole System (C++ / Eigen)
+### LQR and Model Predictive Control of an Underactuated Cart-Pole System (C++ / Eigen)
 
-This repository implements stabilization of a nonlinear cart-pole system using a discrete-time Linear Quadratic Regulator (LQR).
+This repository implements stabilization of a nonlinear cart-pole system using two optimal control approaches:
+
+* **Discrete-Time Linear Quadratic Regulator (LQR)**
+* **Model Predictive Control (MPC)**
 
 The cart-pole is a classical underactuated control problem in which a horizontal force applied to the cart must simultaneously regulate cart motion and stabilize an unstable inverted pendulum.
 
-The implementation is written in modern C++ (C++17) using Eigen and includes Python tools for visualization and animation.
+The implementation is written in modern **C++17** using **Eigen** and includes Python tools for visualization, animation, and controller comparison.
 
 ---
 
 ## Features
 
-- Nonlinear cart-pole dynamics
-- State-space system formulation
-- Linearization around upright equilibrium
-- Discrete-time LQR controller
-- Discrete Riccati equation solver
-- RK4 integration
-- Closed-loop stabilization
-- CSV logging
-- Python visualization tools
-- Cart-pole animation
+* Nonlinear cart-pole dynamics
+* State-space system formulation
+* Linearization around upright equilibrium
+* Discrete-time LQR controller
+* Finite-horizon MPC controller
+* Input force constraints
+* Discrete Riccati equation solver
+* RK4 numerical integration
+* Closed-loop stabilization
+* CSV logging
+* Python visualization tools
+* Cart-pole animation
+* LQR vs MPC comparison
 
 ---
 
@@ -38,10 +44,10 @@ x = [ x
 
 where:
 
-- x = cart position
-- x_dot = cart velocity
-- theta = pole angle
-- theta_dot = pole angular velocity
+* `x` = cart position [m]
+* `x_dot` = cart velocity [m/s]
+* `theta` = pole angle [rad]
+* `theta_dot` = pole angular velocity [rad/s]
 
 Control input:
 
@@ -49,19 +55,34 @@ Control input:
 u = horizontal force applied to the cart
 ```
 
-The linearized system is:
+The nonlinear system is linearized around the upright equilibrium:
+
+```text
+x = 0
+x_dot = 0
+theta = 0
+theta_dot = 0
+```
+
+resulting in the state-space model:
 
 ```text
 x_dot = A x + B u
 ```
 
-and the discrete-time LQR controller computes:
+---
+
+## Linear Quadratic Regulator (LQR)
+
+The LQR controller computes a fixed feedback gain:
 
 ```text
-u = -K x
+u = -Kx
 ```
 
-by minimizing:
+where the gain matrix `K` is obtained by solving the Discrete Algebraic Riccati Equation (DARE).
+
+The controller minimizes:
 
 ```text
 J = Σ (xᵀQx + uᵀRu)
@@ -69,8 +90,43 @@ J = Σ (xᵀQx + uᵀRu)
 
 where:
 
-- Q penalizes state error
-- R penalizes control effort
+* `Q` penalizes state error
+* `R` penalizes control effort
+
+---
+
+## Model Predictive Control (MPC)
+
+The MPC controller predicts future system behavior over a finite horizon and computes an optimal control sequence online.
+
+At each control update, MPC minimizes:
+
+```text
+J = Σ (xᵀQx + uᵀRu)
+```
+
+subject to:
+
+```text
+u_min ≤ u ≤ u_max
+```
+
+Only the first control action is applied before the optimization is repeated at the next update step (receding horizon control).
+
+### MPC Parameters
+
+```text
+Prediction horizon : 50 steps
+Control update     : 20 ms
+Force limits       : ±10 N
+```
+
+The implementation includes:
+
+* warm-started control sequence
+* constrained inputs
+* finite-horizon optimization
+* receding-horizon control
 
 ---
 
@@ -81,16 +137,19 @@ CartPoleControl/
 │
 ├── include/
 │   ├── CartPole.hpp
-│   └── LQR.hpp
+│   ├── LQR.hpp
+│   └── MPC.hpp
 │
 ├── src/
 │   ├── CartPole.cpp
 │   ├── LQR.cpp
+│   ├── MPC.cpp
 │   └── main.cpp
 │
 ├── scripts/
 │   ├── plot_results.py
 │   ├── animate_cartpole.py
+│   ├── compare_controllers.py
 │   └── requirements.txt
 │
 ├── data/
@@ -109,30 +168,31 @@ mkdir build
 cd build
 
 cmake ..
-make -j4
+make -j$(nproc)
 ```
 
 ---
 
 ## Run
 
+Run the LQR controller:
+
 ```bash
-./cartpole_lqr
+./cartpole_control lqr
 ```
 
-This generates:
+Run the MPC controller:
+
+```bash
+./cartpole_control mpc
+```
+
+Simulation logs are written to:
 
 ```text
-data/simulation.csv
+data/lqr.csv
+data/mpc.csv
 ```
-
-containing:
-
-- cart position
-- cart velocity
-- pole angle
-- pole angular velocity
-- control force
 
 ---
 
@@ -148,82 +208,117 @@ pip install -r requirements.txt
 Generate plots:
 
 ```bash
-python plot_results.py
+python plot_results.py lqr
+python plot_results.py mpc
 ```
 
-Generate animation:
+Generate animations:
 
 ```bash
-python animate_cartpole.py
+python animate_cartpole.py lqr
+python animate_cartpole.py mpc
+```
+
+Generate controller comparison figures:
+
+```bash
+python compare_controllers.py
 ```
 
 ---
 
 ## Results
 
-### 🔹 Cart State Response (`data/cart_state_response.png`)
+### LQR Results
 
-This figure shows the cart position and velocity over time as the controller regulates the cart while stabilizing the pole.
+#### Cart State Response
 
-<p align="center">
-  <img src="data/cart_state_response.png"
-       width="700"
-       alt="Cart state response">
-</p>
+![LQR Cart State Response](data/lqr_cart_state_response.png)
 
----
+#### Pole State Response
 
-### 🔹 Pole State Response (`data/pole_state_response.png`)
+![LQR Pole State Response](data/lqr_pole_state_response.png)
 
-This figure shows the pole angle and angular velocity converging toward the upright equilibrium.
+#### Control Force
 
-<p align="center">
-  <img src="data/pole_state_response.png"
-       width="700"
-       alt="Pole state response">
-</p>
+![LQR Control Force](data/lqr_control_force.png)
 
----
+#### Pole Phase Portrait
 
-### 🔹 Control Force (`data/control_force.png`)
+![LQR Pole Phase Portrait](data/lqr_pole_phase_portrait.png)
 
-This figure shows the force generated by the LQR controller to stabilize the cart-pole system.
+#### Animation
 
-<p align="center">
-  <img src="data/control_force.png"
-       width="700"
-       alt="Control force">
-</p>
+![LQR Animation](data/lqr_cartpole.gif)
 
 ---
 
-### 🔹 Pole Phase Portrait (`data/pole_phase_portrait.png`)
+### MPC Results
 
-This phase portrait visualizes the pole state in angle–angular velocity space. The trajectory converges toward the origin, indicating successful stabilization of the upright equilibrium.
+#### Cart State Response
 
-<p align="center">
-  <img src="data/pole_phase_portrait.png"
-       width="600"
-       alt="Pole phase portrait">
-</p>
+![MPC Cart State Response](data/mpc_cart_state_response.png)
+
+#### Pole State Response
+
+![MPC Pole State Response](data/mpc_pole_state_response.png)
+
+#### Control Force
+
+![MPC Control Force](data/mpc_control_force.png)
+
+#### Pole Phase Portrait
+
+![MPC Pole Phase Portrait](data/mpc_pole_phase_portrait.png)
+
+#### Animation
+
+![MPC Animation](data/mpc_cartpole.gif)
 
 ---
 
-### 🔹 Cart-Pole Animation (`data/cartpole_lqr.gif`)
+### Controller Comparison
 
-Animated visualization of the closed-loop cart-pole motion under LQR control.
+#### Pole Angle Comparison
 
-<p align="center">
-  <img src="data/cartpole_lqr.gif"
-       width="700"
-       alt="Cart-pole animation">
-</p>
+![LQR vs MPC Theta](data/lqr_vs_mpc_theta.png)
+
+#### Cart Position Comparison
+
+![LQR vs MPC Cart Position](data/lqr_vs_mpc_cart_position.png)
+
+#### Control Force Comparison
+
+![LQR vs MPC Force](data/lqr_vs_mpc_force.png)
+
+#### Pole Phase Portrait Comparison
+
+![LQR vs MPC Phase Portrait](data/lqr_vs_mpc_phase.png)
+
+---
+
+## Controller Comparison Summary
+
+| Feature                   | LQR     | MPC     |
+| ------------------------- | ------- | ------- |
+| Computational Cost        | Low     | Higher  |
+| Online Optimization       | No      | Yes     |
+| Explicit Constraints      | No      | Yes     |
+| Fixed Gain                | Yes     | No      |
+| Input Saturation Handling | Limited | Natural |
+| Stabilization             | Yes     | Yes     |
+
+LQR provides a computationally efficient optimal controller based on a fixed feedback gain.
+
+MPC repeatedly solves a finite-horizon optimization problem, allowing explicit handling of actuator constraints and future extensions to state constraints.
 
 ---
 
 ## Numerical Integration
 
-The simulation uses RK4 (Runge–Kutta 4th Order) integration for improved numerical accuracy and stability compared to simple Euler integration.
+The nonlinear cart-pole dynamics are integrated using a fourth-order Runge–Kutta (RK4) method.
+
+Compared with Euler integration, RK4 provides improved numerical accuracy and stability for closed-loop simulations.
 
 ---
 
@@ -231,9 +326,9 @@ The simulation uses RK4 (Runge–Kutta 4th Order) integration for improved numer
 
 ### C++
 
-- C++17
-- Eigen3
-- CMake ≥ 3.10
+* C++17
+* Eigen3
+* CMake ≥ 3.10
 
 ### Python
 
@@ -249,3 +344,4 @@ pillow
 ## License
 
 MIT License
+

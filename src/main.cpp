@@ -1,8 +1,9 @@
-#include <iostream>
-#include <fstream>
-#include <algorithm>
 #include "CartPole.hpp"
 #include "LQR.hpp"
+#include "MPC.hpp"
+#include <algorithm>
+#include <fstream>
+#include <iostream>
 
 Eigen::Vector4d rk4Step(const CartPole& cartpole, const Eigen::Vector4d& state, double force,double dt) {
     Eigen::Vector4d k1 = cartpole.dynamics(state, force);
@@ -13,69 +14,121 @@ Eigen::Vector4d rk4Step(const CartPole& cartpole, const Eigen::Vector4d& state, 
     return state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
 }
 
-int main() {
-    const double M = 1.0;
-    const double m = 0.1;
-    const double l = 0.5;
-    const double g = 9.81;
+int main(int argc, char **argv) {
 
-    CartPole cartpole(M, m, l, g);
+  // -------------------------------------------------
+  // Controller selection
+  // -------------------------------------------------
 
-    const double dt = 0.001;
-    const double T = 8.0;
-    const int steps = static_cast<int>(T / dt);
+  std::string controller = "lqr";
 
-    Eigen::Matrix4d A = cartpole.A();
-    Eigen::Vector4d B = cartpole.B();
+  if (argc > 1) {
+    controller = argv[1];
+  }
 
-    Eigen::Matrix4d Ad = Eigen::Matrix4d::Identity() + A * dt;
-    Eigen::Vector4d Bd = B * dt;
+  if (controller != "lqr" && controller != "mpc") {
+    std::cerr << "Usage: ./cartpole_control [lqr|mpc]\n";
+    return 1;
+  }
 
-    Eigen::Matrix4d Q = Eigen::Matrix4d::Zero();
-    Q(0, 0) = 1.0;     // cart position
-    Q(1, 1) = 1.0;     // cart velocity
-    Q(2, 2) = 100.0;   // pole angle
-    Q(3, 3) = 10.0;    // pole angular velocity
+  std::cout << "Controller: " << controller << "\n";
 
-    double R = 0.1;
+  // -------------------------------------------------
+  // Cart-pole parameters
+  // -------------------------------------------------
+  const double M = 1.0;
+  const double m = 0.1;
+  const double l = 0.5;
+  const double g = 9.81;
+  CartPole cartpole(M, m, l, g);
 
-    Eigen::RowVector4d K =  LQR::solveDiscreteARE(Ad, Bd, Q, R);
+  // -------------------------------------------------
+  // Simulation parameters
+  // -------------------------------------------------
+  const double dt = 0.001;
+  const int mpc_update_steps = 20;
+  const double mpc_dt = dt * mpc_update_steps;
+  const double T = 8.0;
 
-    std::cout << "A:\n" << A << "\n\n";
-    std::cout << "B:\n" << B << "\n\n";
-    std::cout << "K:\n" << K << "\n\n";
+  const int steps = static_cast<int>(T / dt);
 
-    Eigen::Vector4d state;
-    state << 0.0,   // cart position [m]
-             0.0,   // cart velocity [m/s]
-             0.5,  // pole angle [rad]
-             0.0;   // pole angular velocity [rad/s]
+  // -------------------------------------------------
+  // Linear model
+  // -------------------------------------------------
+  Eigen::Matrix4d A = cartpole.A();
+  Eigen::Vector4d B = cartpole.B();
 
-    std::ofstream log("../data/simulation.csv");
+  Eigen::Matrix4d Ad = Eigen::Matrix4d::Identity() + A * dt;
+  Eigen::Vector4d Bd = B * dt;
 
-    if (!log.is_open()) {
-        std::cerr << "ERROR: Could not open ../data/simulation.csv\n";
-        return 1;
+  Eigen::Matrix4d Ad_mpc = Eigen::Matrix4d::Identity() + A * mpc_dt;
+  Eigen::Vector4d Bd_mpc = B * mpc_dt;
+  // -------------------------------------------------
+  // Cost matrices
+  // -------------------------------------------------
+  Eigen::Matrix4d Q = Eigen::Matrix4d::Zero();
+  Q(0, 0) = 10.0;     // cart position
+  Q(1, 1) = 2.0;     // cart velocity
+  Q(2, 2) = 100.0;   // pole angle
+  Q(3, 3) = 10.0;    // pole angular velocity
+
+  double R = 0.1;
+
+  // -------------------------------------------------
+  // LQR controller
+  // -------------------------------------------------
+  Eigen::RowVector4d K = LQR::solveDiscreteARE(Ad, Bd, Q, R);
+
+  // -------------------------------------------------
+  // MPC controller
+  // -------------------------------------------------
+
+  const int horizon = 50;
+
+  const double u_min = -10.0;
+  const double u_max = 10.0;
+
+  MPC mpc(Ad_mpc, Bd_mpc, Q, R, horizon, u_min, u_max);
+
+  // -------------------------------------------------
+  // Initial state
+  // -------------------------------------------------
+  Eigen::Vector4d state;
+  state << 0.0, // cart position [m]
+      0.0,      // cart velocity [m/s]
+      0.15,      // pole angle [rad]
+      0.0;      // pole angular velocity [rad/s]
+  std::string filename = "../data/" + controller + ".csv";
+  std::ofstream log(filename);
+
+  if (!log.is_open()) {
+      std::cerr << "ERROR: Could not open ../data/simulation.csv\n";
+      return 1;
+  }
+
+  log << "t,x,x_dot,theta,theta_dot,u\n";
+  double u = 0.0;
+  for (int i = 0; i < steps; ++i) {
+    double time = i * dt;
+
+    if (controller == "lqr") {
+      u = -(K * state)(0);
+      u = std::clamp(u, u_min, u_max);
+    } else if (controller == "mpc") {
+
+      if (i % mpc_update_steps == 0) {
+        // optimization iterations, // gradient step size
+        u = mpc.solve(state,  80, 0.0005);
+      }
     }
+    state = rk4Step(cartpole, state, u, dt);
 
-    log << "t,x,x_dot,theta,theta_dot,u\n";
+    log << time << "," << state(0) << "," << state(1) << "," << state(2) << "," << state(3) << "," << u << "\n";
+  }
 
-    for (int i = 0; i < steps; ++i) {
-        double time = i * dt;
+  log.close();
 
-        double u = -(K * state)(0);
-        // actuator saturation
-        const double u_max = 10.0;
-        u = std::clamp(u, -u_max, u_max);
+  std::cout << filename + " written.\n";
 
-        state = rk4Step(cartpole, state, u, dt);
-
-        log << time << ","  << state(0) << "," << state(1) << ","  << state(2) << ","  << state(3) << ","  << u << "\n";
-    }
-
-    log.close();
-
-    std::cout << "simulation.csv written.\n";
-
-    return 0;
+  return 0;
 }

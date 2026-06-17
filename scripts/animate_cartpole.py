@@ -1,9 +1,29 @@
+import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
 
-df = pd.read_csv("../data/simulation.csv")
+# -------------------------------------------------
+# Parse command line
+# -------------------------------------------------
+
+controller = "lqr"
+
+if len(sys.argv) > 1:
+    controller = sys.argv[1]
+
+if controller not in ["lqr", "mpc"]:
+    print("Usage: python animate_cartpole.py [lqr|mpc]")
+    sys.exit(1)
+
+csv_file = f"../data/{controller}.csv"
+
+# -------------------------------------------------
+# Load data
+# -------------------------------------------------
+
+df = pd.read_csv(csv_file)
 
 x = df["x"].values
 theta = df["theta"].values
@@ -19,10 +39,14 @@ stride = 20
 x_anim = x[::stride]
 theta_anim = theta[::stride]
 
+# -------------------------------------------------
+# Figure setup
+# -------------------------------------------------
+
 fig, ax = plt.subplots(figsize=(8, 4))
 
 ax.set_aspect("equal")
-ax.set_title("Cart-Pole LQR Stabilization")
+ax.set_title(f"Cart-Pole {controller.upper()} Stabilization")
 ax.set_xlabel("x [m]")
 ax.set_ylabel("y [m]")
 ax.grid(True)
@@ -32,15 +56,15 @@ ax.set_xlim(x.min() - margin, x.max() + margin)
 ax.set_ylim(-0.3, l + 0.4)
 
 # Ground line
-ax.plot([x.min() - margin, x.max() + margin], [0, 0], "k--", linewidth=1)
-
-cart = plt.Rectangle(
-    (x_anim[0] - cart_width / 2, 0),
-    cart_width,
-    cart_height,
-    fill=False,
-    linewidth=2
+ax.plot(
+    [x.min() - margin, x.max() + margin],
+    [0, 0],
+    "k--",
+    linewidth=1
 )
+
+cart = plt.Rectangle((x_anim[0] - cart_width / 2, 0),  cart_width,  cart_height, fill=False, linewidth=2)
+
 ax.add_patch(cart)
 
 pole_line, = ax.plot([], [], linewidth=3)
@@ -72,14 +96,10 @@ def update(frame):
     return cart, pole_line, mass_point
 
 
-anim = FuncAnimation(
-    fig,
-    update,
-    frames=len(x_anim),
-    init_func=init,
-    blit=True,
-    interval=40
-)
+anim = FuncAnimation(fig,update, frames=len(x_anim),  init_func=init, blit=True,interval=40)
 
-anim.save("../data/cartpole_lqr.gif", writer=PillowWriter(fps=25))
-print("Saved ../data/cartpole_lqr.gif")
+output_file = f"../data/{controller}_cartpole.gif"
+
+anim.save(output_file, writer=PillowWriter(fps=25))
+
+print(f"Saved {output_file}")

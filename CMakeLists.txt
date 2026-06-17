@@ -13,6 +13,7 @@ find_package(Eigen3 REQUIRED)
 add_library(cartpolecontrol
         src/CartPole.cpp
         src/LQR.cpp
+        src/MPC.cpp
 )
 
 target_include_directories(cartpolecontrol
